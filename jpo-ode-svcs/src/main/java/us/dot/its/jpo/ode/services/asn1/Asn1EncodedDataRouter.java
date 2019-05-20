@@ -15,8 +15,14 @@
  ******************************************************************************/
 package us.dot.its.jpo.ode.services.asn1;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.StampedLock;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -36,6 +42,7 @@ import us.dot.its.jpo.ode.util.JsonUtils;
 import us.dot.its.jpo.ode.util.JsonUtils.JsonUtilsException;
 import us.dot.its.jpo.ode.util.XmlUtils;
 import us.dot.its.jpo.ode.wrapper.AbstractSubscriberProcessor;
+import us.dot.its.jpo.ode.wrapper.MessageConsumer;
 import us.dot.its.jpo.ode.wrapper.MessageProducer;
 
 public class Asn1EncodedDataRouter extends AbstractSubscriberProcessor<String, String> {
@@ -62,7 +69,12 @@ public class Asn1EncodedDataRouter extends AbstractSubscriberProcessor<String, S
    private MessageProducer<String, String> stringMsgProducer;
    private Asn1CommandManager asn1CommandManager;
 
-   public Asn1EncodedDataRouter(OdeProperties odeProperties) {
+   private String requestId;
+   private StampedLock lock;
+   private long stamp;
+   private Asn1EncodedDataConsumer<String, String> consumer;
+
+   public Asn1EncodedDataRouter(OdeProperties odeProperties, String requestId) {
       super();
 
       this.odeProperties = odeProperties;
@@ -72,11 +84,24 @@ public class Asn1EncodedDataRouter extends AbstractSubscriberProcessor<String, S
 
       this.asn1CommandManager = new Asn1CommandManager(odeProperties);
 
+      this.requestId = requestId;
+      this.lock = new StampedLock();
+
+      this.stamp = this.lock.writeLock();
+
+      consumer = new Asn1EncodedDataConsumer<String, String>(
+            odeProperties.getKafkaBrokers(), this.getClass().getSimpleName() + requestId, this,
+            MessageConsumer.SERIALIZATION_STRING_DESERIALIZER);
    }
 
    @Override
-   public Object process(String consumedData) {
-      try {
+   public HashMap<String, String> process(String consumedData) {
+     
+     unlock();
+
+     HashMap<String, String> responseList = null;
+
+     try {
          logger.debug("Consumed: {}", consumedData);
          JSONObject consumedObj = XmlUtils.toJSONObject(consumedData).getJSONObject(OdeAsn1Data.class.getSimpleName());
 
@@ -90,34 +115,40 @@ public class Asn1EncodedDataRouter extends AbstractSubscriberProcessor<String, S
 
          if (metadata.has(TimTransmogrifier.REQUEST_STRING)) {
             JSONObject request = metadata.getJSONObject(TimTransmogrifier.REQUEST_STRING);
+            JSONObject ode = request.getJSONObject("ode");
 
-            if (request.has(TimTransmogrifier.RSUS_STRING)) {
-               JSONObject rsusIn = (JSONObject) request.get(TimTransmogrifier.RSUS_STRING);
-               if (rsusIn.has(TimTransmogrifier.RSUS_STRING)) {
-                 Object rsu = rsusIn.get(TimTransmogrifier.RSUS_STRING);
-                 JSONArray rsusOut = new JSONArray();
-                 if (rsu instanceof JSONArray) {
-                   logger.debug("Multiple RSUs exist in the request: {}", request);
-                   JSONArray rsusInArray = (JSONArray) rsu;
-                   for (int i = 0; i < rsusInArray.length(); i++) {
-                     rsusOut.put(rsusInArray.get(i));
-                   }
-                   request.put(TimTransmogrifier.RSUS_STRING, rsusOut);
-                 } else if (rsu instanceof JSONObject) {
-                   logger.debug("Single RSU exists in the request: {}", request);
-                   rsusOut.put(rsu);
-                   request.put(TimTransmogrifier.RSUS_STRING, rsusOut);
-                 } else {
-                   logger.debug("No RSUs exist in the request: {}", request);
-                   request.remove(TimTransmogrifier.RSUS_STRING);
-                 }
+            if (ode.has("requestId")) {
+              if (ode.getString("requestId").equals(requestId)) {
+                if (request.has(TimTransmogrifier.RSUS_STRING)) {
+                  JSONObject rsusIn = (JSONObject) request.get(TimTransmogrifier.RSUS_STRING);
+                  if (rsusIn.has(TimTransmogrifier.RSUS_STRING)) {
+                    Object rsu = rsusIn.get(TimTransmogrifier.RSUS_STRING);
+                    JSONArray rsusOut = new JSONArray();
+                    if (rsu instanceof JSONArray) {
+                      logger.debug("Multiple RSUs exist in the request: {}", request);
+                      JSONArray rsusInArray = (JSONArray) rsu;
+                      for (int i = 0; i < rsusInArray.length(); i++) {
+                        rsusOut.put(rsusInArray.get(i));
+                      }
+                      request.put(TimTransmogrifier.RSUS_STRING, rsusOut);
+                    } else if (rsu instanceof JSONObject) {
+                      logger.debug("Single RSU exists in the request: {}", request);
+                      rsusOut.put(rsu);
+                      request.put(TimTransmogrifier.RSUS_STRING, rsusOut);
+                    } else {
+                      logger.debug("No RSUs exist in the request: {}", request);
+                      request.remove(TimTransmogrifier.RSUS_STRING);
+                    }
+                  }
                }
+
+               // Convert JSON to POJO
+               ServiceRequest servicerequest = getServicerequest(consumedObj);
+
+               processEncodedTim(servicerequest, consumedObj);
+              }
             }
-
-            // Convert JSON to POJO
-            ServiceRequest servicerequest = getServicerequest(consumedObj);
-
-            processEncodedTim(servicerequest, consumedObj);
+            
          } else {
             throw new Asn1EncodedDataRouterException("Invalid or missing '"
                 + TimTransmogrifier.REQUEST_STRING + "' object in the encoder response");
@@ -127,7 +158,7 @@ public class Asn1EncodedDataRouter extends AbstractSubscriberProcessor<String, S
          EventLogger.logger.error(msg, e);
          logger.error(msg, e);
       }
-      return null;
+      return responseList;
    }
 
    public ServiceRequest getServicerequest(JSONObject consumedObj) {
@@ -148,9 +179,12 @@ public class Asn1EncodedDataRouter extends AbstractSubscriberProcessor<String, S
       return serviceRequest;
    }
 
-   public void processEncodedTim(ServiceRequest request, JSONObject consumedObj) {
+   public Map<String, String>  processEncodedTim(ServiceRequest request, JSONObject consumedObj) {
 
-      JSONObject dataObj = consumedObj.getJSONObject(AppContext.PAYLOAD_STRING).getJSONObject(AppContext.DATA_STRING);
+     // Send TIMs and record results
+     Map<String, String> responseList = null;
+
+     JSONObject dataObj = consumedObj.getJSONObject(AppContext.PAYLOAD_STRING).getJSONObject(AppContext.DATA_STRING);
 
       // CASE 1: no SDW in metadata (SNMP deposit only)
       // - sign MF
@@ -193,8 +227,9 @@ public class Asn1EncodedDataRouter extends AbstractSubscriberProcessor<String, S
 
          if (null != request.getSnmp() && null != request.getRsus() && null != hexEncodedTim) {
             logger.info("Sending message to RSUs...");
-            Map<String, String> rsuResponseList = asn1CommandManager.sendToRsus(request, hexEncodedTim);
-            logger.info("TIM deposit response {}", rsuResponseList);
+            responseList = asn1CommandManager.sendToRsus(request, hexEncodedTim);
+            logger.info("TIM deposit response {}", responseList);
+            
          }
 
          if (request.getSdw() != null) {
@@ -215,18 +250,33 @@ public class Asn1EncodedDataRouter extends AbstractSubscriberProcessor<String, S
             // We have a ASD with signed MessageFrame
             // Case 3
             JSONObject asdObj = dataObj.getJSONObject(Asn1CommandManager.ADVISORY_SITUATION_DATA_STRING);
+            String sdwMessage;
             try {
               asn1CommandManager.depositToSdw(asdObj.getString(BYTES));
+              sdwMessage = "\"sdw_deposit\":{\"success\":\"true\"}";
+              logger.info("DDS deposit successful.");
             } catch (JSONException | Asn1CommandManagerException e) {
-              String msg = ERROR_ON_DDS_DEPOSIT;
+              sdwMessage = "\"sdw_deposit\":{\"success\":\"false\"}";
+            	String msg = ERROR_ON_DDS_DEPOSIT;
               logger.error(msg, e);
             }
+            
+            if (responseList == null)
+            	responseList = new HashMap<>();
+            
+            responseList.put("sdwMessage", sdwMessage);
          } else {
             logger.debug("Unsigned ASD received. Depositing it to SDW.");
             //We have ASD with UNSECURED MessageFrame
             processEncodedTimUnsecured(request, consumedObj);
          }
       }
+
+      String msg = "TIM deposit response " + responseList;
+      logger.info(msg);
+      EventLogger.logger.info(msg);
+
+      return responseList;
    }
 
    public void processEncodedTimUnsecured(ServiceRequest request, JSONObject consumedObj) {
@@ -285,4 +335,50 @@ public class Asn1EncodedDataRouter extends AbstractSubscriberProcessor<String, S
 
       logger.info("TIM deposit response {}", responseList);
    }
+
+   public Future<?> consume(ExecutorService executor, String... inputTopics) {
+     logger.info("consuming from topic {}", Arrays.asList(inputTopics).toString());
+
+     Future<?> future = executor.submit(new Callable<Object>() {
+        @Override
+        public Object call() {
+           Object result = null;
+
+           consumer.subscribe(inputTopics);
+           
+           // Now that the subscription is established, we can release the synchronization lock
+           unlock();
+           
+           result = consumer.consume();
+           consumer.close();
+           return result;
+        }
+     });
+     return future;
+  }
+
+
+   public void waitTillReady() {
+     try {
+        long stamp2 = lock.tryWriteLock(odeProperties.getRestResponseTimeout(), TimeUnit.MILLISECONDS);
+        if (stamp2 != 0) {
+           lock.unlockWrite(stamp2);
+        }
+     } catch (Exception e) {
+        logger.error("ASN.1 Encoded Data Consumer took too long to start", e);
+     } finally {
+        unlock();
+     }
+  }
+
+   private void unlock() {
+		if (stamp != 0) {
+			lock.unlockWrite(stamp);
+			stamp = 0;
+		}
+	}
+
+	public void close() {
+		consumer.close();
+	}
 }

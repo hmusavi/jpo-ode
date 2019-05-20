@@ -26,9 +26,9 @@ import org.slf4j.LoggerFactory;
 
 public class MessageConsumer<K, V> {
    
-   private String name = "DefaultMessageConsumer";
+   protected String name = "DefaultMessageConsumer";
 
-   private static final int CONSUMER_POLL_TIMEOUT_MS = 60000;
+   public static final int CONSUMER_POLL_TIMEOUT_MS = 60000;
    public static final String SERIALIZATION_STRING_DESERIALIZER = "org.apache.kafka.common.serialization.StringDeserializer";
    public static final String SERIALIZATION_BYTE_ARRAY_DESERIALIZER = "org.apache.kafka.common.serialization.ByteArrayDeserializer";
    public static final int DEFAULT_CONSUMER_SESSION_TIMEOUT_MS = 30000;
@@ -37,11 +37,11 @@ public class MessageConsumer<K, V> {
 
    private static Logger logger = LoggerFactory.getLogger(MessageConsumer.class);
 
-   private MessageProcessor<K, V> processor;
+   protected MessageProcessor<K, V> processor;
 
-   private KafkaConsumer<K, V> consumer;
+   protected KafkaConsumer<K, V> consumer;
 
-   private boolean isRunning = false;
+   protected boolean isRunning = false;
 
     public static MessageConsumer<String, byte[]> defaultByteArrayMessageConsumer(
         String brokers, String groupId, MessageProcessor<String, byte[]> processor) {

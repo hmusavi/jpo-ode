@@ -17,6 +17,12 @@ package us.dot.its.jpo.ode.traveler;
 
 import java.text.ParseException;
 import java.time.format.DateTimeParseException;
+import java.util.HashMap;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -48,6 +54,7 @@ import us.dot.its.jpo.ode.plugin.ServiceRequest.OdeInternal.RequestVerb;
 import us.dot.its.jpo.ode.plugin.j2735.DdsAdvisorySituationData;
 import us.dot.its.jpo.ode.plugin.j2735.OdeTravelerInformationMessage;
 import us.dot.its.jpo.ode.plugin.j2735.builders.TravelerMessageFromHumanToAsnConverter;
+import us.dot.its.jpo.ode.services.asn1.Asn1EncodedDataRouter;
 import us.dot.its.jpo.ode.traveler.TimTransmogrifier.TimTransmogrifierException;
 import us.dot.its.jpo.ode.util.DateTimeUtils;
 import us.dot.its.jpo.ode.util.JsonUtils;
@@ -73,12 +80,18 @@ public class TimDepositController {
    private MessageProducer<String, String> stringMsgProducer;
    private MessageProducer<String, OdeObject> timProducer;
 
+   private ExecutorService asn1EncoderExecPool;
+
    public static class TimDepositControllerException extends Exception {
 
       private static final long serialVersionUID = 1L;
 
       public TimDepositControllerException(String errMsg) {
          super(errMsg);
+      }
+
+      public TimDepositControllerException(String string, Exception e) {
+    	   super(string, e);
       }
       
    }
@@ -97,6 +110,8 @@ public class TimDepositController {
       this.timProducer = new MessageProducer<>(odeProperties.getKafkaBrokers(), odeProperties.getKafkaProducerType(),
             null, OdeTimSerializer.class.getName(), odeProperties.getKafkaTopicsDisabledSet());
 
+      this.asn1EncoderExecPool = Executors.newCachedThreadPool();
+
    }
 
    /**
@@ -105,8 +120,9 @@ public class TimDepositController {
     * @param jsonString
     * @param verb
     * @return
+   * @throws TimDepositControllerException 
     */
-   public ResponseEntity<String> depositTim(String jsonString, RequestVerb verb) {
+   public ResponseEntity<String> depositTim(String jsonString, RequestVerb verb) throws TimDepositControllerException {
 
       if (null == jsonString || jsonString.isEmpty()) {
          String errMsg = "Empty request.";
@@ -141,6 +157,20 @@ public class TimDepositController {
          return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(JsonUtils.jsonKeyValue(ERRSTR, errMsg));
       }
 
+
+      // asn1_codec Encoder Routing
+      String requestId = UUID.randomUUID().toString();
+      logger.info("Launching ASN.1 Encoder for Request ID: {}", requestId);
+      
+      odeTID.getRequest().getOde().setRequestId(requestId);
+      
+      Asn1EncodedDataRouter encoderRouter = new Asn1EncodedDataRouter(odeProperties, requestId);
+
+      @SuppressWarnings("unchecked")
+      Future<HashMap<String, String>> future =  
+            (Future<HashMap<String, String>>) encoderRouter.consume(
+               asn1EncoderExecPool, odeProperties.getKafkaTopicAsn1EncoderOutput());
+      
       // Add metadata to message and publish to kafka
       OdeTravelerInformationMessage tim = odeTID.getTim();
       OdeMsgPayload timDataPayload = new OdeMsgPayload(tim);
@@ -210,6 +240,9 @@ public class TimDepositController {
          String j2735Tim = TimTransmogrifier.createOdeTimData(jsonMsg.getJSONObject(AppContext.ODE_ASN1_DATA))
                .toString();
 
+//       ConcurrentUtils.sleep(5);
+         encoderRouter.waitTillReady();
+
          stringMsgProducer.send(odeProperties.getKafkaTopicAsn1EncoderInput(), null, xmlMsg);
 
          String obfuscatedj2735Tim = TimTransmogrifier.obfuscateRsuPassword(j2735Tim);
@@ -221,12 +254,24 @@ public class TimDepositController {
          serialIdOde.increment();
          serialIdJ2735.increment();
       } catch (JsonUtils.JsonUtilsException | XmlUtils.XmlUtilsException | TimTransmogrifierException e) {
-         String errMsg = "Error sending data to ASN.1 Encoder module: " + e.getMessage();
+         String errMsg = "Error sending data to ASN.1 Encoder module.";
          logger.error(errMsg, e);
          return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(JsonUtils.jsonKeyValue(ERRSTR, errMsg));
       }
 
-      return ResponseEntity.status(HttpStatus.OK).body(JsonUtils.jsonKeyValue(SUCCESS, "true"));
+      HashMap<String, String> responseList;
+      try {
+         responseList = future.get(odeProperties.getRestResponseTimeout(), TimeUnit.MILLISECONDS);
+      } catch (Exception e) {
+         encoderRouter.close();
+         throw new TimDepositControllerException("Error getting deposit response.", e);
+      }
+      
+      if (responseList == null)
+         return ResponseEntity.status(HttpStatus.OK).body(JsonUtils.jsonKeyValue(SUCCESS, "true"));
+      else {
+         return ResponseEntity.status(HttpStatus.OK).body(responseList.toString());
+      }
    }
 
    /**
@@ -234,10 +279,11 @@ public class TimDepositController {
     *
     * @param jsonString TIM in JSON
     * @return list of success/failures
+   * @throws TimDepositControllerException 
     */
    @PutMapping(value = "/tim", produces = "application/json")
    @CrossOrigin
-   public ResponseEntity<String> putTim(@RequestBody String jsonString) {
+   public ResponseEntity<String> putTim(@RequestBody String jsonString) throws TimDepositControllerException {
 
       return depositTim(jsonString, ServiceRequest.OdeInternal.RequestVerb.PUT);
    }
@@ -247,10 +293,11 @@ public class TimDepositController {
     *
     * @param jsonString TIM in JSON
     * @return list of success/failures
+   * @throws TimDepositControllerException 
     */
    @PostMapping(value = "/tim", produces = "application/json")
    @CrossOrigin
-   public ResponseEntity<String> postTim(@RequestBody String jsonString) {
+   public ResponseEntity<String> postTim(@RequestBody String jsonString) throws TimDepositControllerException {
 
       return depositTim(jsonString, ServiceRequest.OdeInternal.RequestVerb.POST);
    }

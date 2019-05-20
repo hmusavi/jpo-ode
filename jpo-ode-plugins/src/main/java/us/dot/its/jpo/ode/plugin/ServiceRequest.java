@@ -34,6 +34,7 @@ public class ServiceRequest extends OdeObject {
 
      private int version = LATEST_VERSION;
      private RequestVerb verb;
+     private String requestId;
 
     public OdeInternal() {
       super();
@@ -69,30 +70,45 @@ public class ServiceRequest extends OdeObject {
       return this;
     }
 
-    @Override
-    public int hashCode() {
-      final int prime = 31;
-      int result = 1;
-      result = prime * result + ((verb == null) ? 0 : verb.hashCode());
-      result = prime * result + version;
-      return result;
-    }
+    
+    public String getRequestId() {
+		return requestId;
+	}
+
+	public void setRequestId(String requestId) {
+		this.requestId = requestId;
+	}
+
+	@Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = 1;
+		result = prime * result + ((requestId == null) ? 0 : requestId.hashCode());
+		result = prime * result + ((verb == null) ? 0 : verb.hashCode());
+		result = prime * result + version;
+		return result;
+	}
 
     @Override
-    public boolean equals(Object obj) {
-      if (this == obj)
-        return true;
-      if (obj == null)
-        return false;
-      if (getClass() != obj.getClass())
-        return false;
-      OdeInternal other = (OdeInternal) obj;
-      if (verb != other.verb)
-        return false;
-      if (version != other.version)
-        return false;
-      return true;
-    }
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		OdeInternal other = (OdeInternal) obj;
+		if (requestId == null) {
+			if (other.requestId != null)
+				return false;
+		} else if (!requestId.equals(other.requestId))
+			return false;
+		if (verb != other.verb)
+			return false;
+		if (version != other.version)
+			return false;
+		return true;
+	}
 
   }
 

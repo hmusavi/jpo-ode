@@ -71,6 +71,11 @@ public class OdeProperties implements EnvironmentAware {
    private List<Path> uploadLocations = new ArrayList<>();
 
    /*
+    * REST Endpoint Properties
+    */
+   private int restResponseTimeout = 15000;
+
+   /*
     * RSU Properties
     */
    private int rsuSrmSlots = 100; // number of "store and repeat message" indicies for RSU TIMs
@@ -619,5 +624,15 @@ public class OdeProperties implements EnvironmentAware {
    public void setDepositSdwMessagesOverWebsocket(boolean depositSdwMessagesOverWebsocket) {
       this.depositSdwMessagesOverWebsocket = depositSdwMessagesOverWebsocket;
    }
+
+
+	public int getRestResponseTimeout() {
+		return restResponseTimeout;
+	}
+
+
+	public void setRestResponseTimeout(int restResponseTimeout) {
+		this.restResponseTimeout = restResponseTimeout;
+	}
 
 }

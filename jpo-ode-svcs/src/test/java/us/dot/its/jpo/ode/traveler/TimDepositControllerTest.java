@@ -32,6 +32,7 @@ import us.dot.its.jpo.ode.model.OdeMsgMetadata;
 import us.dot.its.jpo.ode.model.SerialId;
 import us.dot.its.jpo.ode.plugin.j2735.DdsAdvisorySituationData;
 import us.dot.its.jpo.ode.plugin.j2735.builders.TravelerMessageFromHumanToAsnConverter;
+import us.dot.its.jpo.ode.traveler.TimDepositController.TimDepositControllerException;
 import us.dot.its.jpo.ode.util.JsonUtils.JsonUtilsException;
 import us.dot.its.jpo.ode.util.XmlUtils;
 import us.dot.its.jpo.ode.util.XmlUtils.XmlUtilsException;
@@ -51,32 +52,32 @@ public class TimDepositControllerTest {
    TimTransmogrifier capturingTimTransmogrifier;
 
    @Test
-   public void nullRequestShouldReturnEmptyError() {
+   public void nullRequestShouldReturnEmptyError() throws TimDepositControllerException {
       ResponseEntity<String> actualResponse = testTimDepositController.postTim(null);
       assertEquals("{\"error\":\"Empty request.\"}", actualResponse.getBody());
    }
 
    @Test
-   public void emptyRequestShouldReturnEmptyError() {
+   public void emptyRequestShouldReturnEmptyError() throws TimDepositControllerException {
       ResponseEntity<String> actualResponse = testTimDepositController.postTim("");
       assertEquals("{\"error\":\"Empty request.\"}", actualResponse.getBody());
    }
 
    @Test
-   public void invalidJsonSyntaxShouldReturnJsonSyntaxError() {
+   public void invalidJsonSyntaxShouldReturnJsonSyntaxError() throws TimDepositControllerException {
       ResponseEntity<String> actualResponse = testTimDepositController.postTim("{\"invalid\":\"json\"}}");
       assertEquals("{\"error\":\"Malformed or non-compliant JSON syntax.\"}", actualResponse.getBody());
    }
 
    @Test
-   public void missingRequestElementShouldReturnMissingRequestError() {
+   public void missingRequestElementShouldReturnMissingRequestError() throws TimDepositControllerException {
       ResponseEntity<String> actualResponse = testTimDepositController.postTim("{\"tim\":{}}");
       assertEquals("{\"error\":\"Missing or invalid argument: Request element is required as of version 3.\"}",
             actualResponse.getBody());
    }
 
    @Test
-   public void invalidTimestampShouldReturnInvalidTimestampError() {
+   public void invalidTimestampShouldReturnInvalidTimestampError() throws TimDepositControllerException {
       ResponseEntity<String> actualResponse = testTimDepositController
             .postTim("{\"request\":{},\"tim\":{\"timeStamp\":\"201-03-13T01:07:11-05:00\"}}");
       assertEquals("{\"error\":\"Invalid timestamp in tim record: 201-03-13T01:07:11-05:00\"}",
@@ -84,7 +85,7 @@ public class TimDepositControllerTest {
    }
 
    @Test
-   public void messageWithNoRSUsOrSDWShouldReturnWarning() {
+   public void messageWithNoRSUsOrSDWShouldReturnWarning() throws TimDepositControllerException {
       ResponseEntity<String> actualResponse = testTimDepositController
             .postTim("{\"request\":{},\"tim\":{\"timeStamp\":\"2018-03-13T01:07:11-05:00\"}}");
       assertEquals(
@@ -95,7 +96,7 @@ public class TimDepositControllerTest {
    @Test
    public void failedObjectNodeConversionShouldReturnConvertingError(
          @Capturing TravelerMessageFromHumanToAsnConverter capturingTravelerMessageFromHumanToAsnConverter)
-         throws JsonUtilsException {
+         throws JsonUtilsException, TimDepositControllerException {
 
       new Expectations() {
 
@@ -112,7 +113,7 @@ public class TimDepositControllerTest {
 
    @Test
    public void failedXmlConversionShouldReturnConversionError(@Capturing TimTransmogrifier capturingTimTransmogrifier)
-         throws XmlUtilsException, JsonUtilsException {
+         throws XmlUtilsException, JsonUtilsException, TimDepositControllerException {
 
       new Expectations() {
          {
@@ -129,21 +130,21 @@ public class TimDepositControllerTest {
    }
    
    @Test
-   public void testSuccessfulMessageReturnsSuccessMessagePost(@Capturing XmlUtils capturingXmlUtils) {
+   public void testSuccessfulMessageReturnsSuccessMessagePost(@Capturing XmlUtils capturingXmlUtils) throws TimDepositControllerException {
       ResponseEntity<String> actualResponse = testTimDepositController.postTim(
             "{\"request\":{\"rsus\":[],\"snmp\":{}},\"tim\":{\"msgCnt\":\"13\",\"timeStamp\":\"2017-03-13T01:07:11-05:00\"}}");
       assertEquals("{\"success\":\"true\"}", actualResponse.getBody());
    }
    
    @Test
-   public void testSuccessfulMessageReturnsSuccessMessagePostWithOde(@Capturing XmlUtils capturingXmlUtils) {
+   public void testSuccessfulMessageReturnsSuccessMessagePostWithOde(@Capturing XmlUtils capturingXmlUtils) throws TimDepositControllerException {
       ResponseEntity<String> actualResponse = testTimDepositController.postTim(
             "{\"request\":{\"ode\":{},\"rsus\":[],\"snmp\":{}},\"tim\":{\"msgCnt\":\"13\",\"timeStamp\":\"2017-03-13T01:07:11-05:00\"}}");
       assertEquals("{\"success\":\"true\"}", actualResponse.getBody());
    }
    
    @Test
-   public void testSuccessfulMessageReturnsSuccessMessagePut(@Capturing XmlUtils capturingXmlUtils) {
+   public void testSuccessfulMessageReturnsSuccessMessagePut(@Capturing XmlUtils capturingXmlUtils) throws TimDepositControllerException {
       ResponseEntity<String> actualResponse = testTimDepositController.putTim(
             "{\"request\":{\"rsus\":[],\"snmp\":{}},\"tim\":{\"msgCnt\":\"13\",\"timeStamp\":\"2017-03-13T01:07:11-05:00\"}}");
       assertEquals("{\"success\":\"true\"}", actualResponse.getBody());
