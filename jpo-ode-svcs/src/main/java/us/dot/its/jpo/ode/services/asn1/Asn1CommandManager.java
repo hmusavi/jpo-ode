@@ -223,7 +223,7 @@ public class Asn1CommandManager {
          OdeMsgPayload payload = null;
 
          ObjectNode dataBodyObj = JsonUtils.newNode();
-         ObjectNode asdObj = JsonUtils.toObjectNode(asd.toJson());
+         ObjectNode asdObj = JsonUtils.toObjectNode(asd.toJson(odeProperties.getVerboseJson()));
          ObjectNode admDetailsObj = (ObjectNode) asdObj.findValue("asdmDetails");
          admDetailsObj.remove("advisoryMessage");
          admDetailsObj.put("advisoryMessage", signedMsg);
@@ -232,13 +232,13 @@ public class Asn1CommandManager {
 
          payload = new OdeAsdPayload(asd);
 
-         ObjectNode payloadObj = JsonUtils.toObjectNode(payload.toJson());
+         ObjectNode payloadObj = JsonUtils.toObjectNode(payload.toJson(odeProperties.getVerboseJson()));
          payloadObj.set(AppContext.DATA_STRING, dataBodyObj);
 
          OdeMsgMetadata metadata = new OdeMsgMetadata(payload);
-         ObjectNode metaObject = JsonUtils.toObjectNode(metadata.toJson());
+         ObjectNode metaObject = JsonUtils.toObjectNode(metadata.toJson(odeProperties.getVerboseJson()));
 
-         ObjectNode requestObj = JsonUtils.toObjectNode(JsonUtils.toJson(request, false));
+         ObjectNode requestObj = JsonUtils.toObjectNode(JsonUtils.toJson(request, odeProperties.getVerboseJson()));
 
          requestObj.remove("tim");
 

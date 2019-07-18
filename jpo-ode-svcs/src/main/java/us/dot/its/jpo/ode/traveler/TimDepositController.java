@@ -163,7 +163,7 @@ public class TimDepositController {
       OdeTimData odeTimData = new OdeTimData(timMetadata, timDataPayload);
       timProducer.send(odeProperties.getKafkaTopicOdeTimBroadcastPojo(), null, odeTimData);
 
-      String obfuscatedTimData = TimTransmogrifier.obfuscateRsuPassword(odeTimData.toJson());
+      String obfuscatedTimData = TimTransmogrifier.obfuscateRsuPassword(odeTimData.toJson(odeProperties.getVerboseJson()));
       stringMsgProducer.send(odeProperties.getKafkaTopicOdeTimBroadcastJson(), null, obfuscatedTimData);
 
       // Now that the message gas been published to OdeBradcastTim topic, it should be
@@ -181,7 +181,7 @@ public class TimDepositController {
       // Craft ASN-encodable TIM
       ObjectNode encodableTid;
       try {
-         encodableTid = JsonUtils.toObjectNode(odeTID.toJson());
+         encodableTid = JsonUtils.toObjectNode(odeTID.toJson(odeProperties.getVerboseJson()));
          TravelerMessageFromHumanToAsnConverter.convertTravelerInputDataToEncodableTim(encodableTid);
 
          logger.debug("Encodable Traveler Information Data: {}", encodableTid);

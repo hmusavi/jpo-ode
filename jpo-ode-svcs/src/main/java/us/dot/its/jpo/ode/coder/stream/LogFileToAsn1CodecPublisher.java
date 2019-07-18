@@ -141,7 +141,7 @@ public class LogFileToAsn1CodecPublisher implements Asn1CodecPublisher {
        if (isDriverAlertRecord()){
           logger.debug("Publishing a driverAlert.");
 
-          publisher.publish(JsonUtils.toJson(odeData, false),
+          publisher.publish(JsonUtils.toJson(odeData, publisher.getOdeProperties().getVerboseJson()),
              publisher.getOdeProperties().getKafkaTopicDriverAlertJson());
        } else {
           if (isBsmRecord()) {

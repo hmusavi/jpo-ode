@@ -38,6 +38,6 @@ public class OdeStringPublisher extends MessagePublisher {
 
    public void publish(OdeData msg, String topic) {
       logger.debug("Publishing to {}: {}", topic, msg);
-      stringProducer.send(topic, null, msg.toJson());
+      stringProducer.send(topic, null, msg.toJson(odeProperties.getVerboseJson()));
    }
 }

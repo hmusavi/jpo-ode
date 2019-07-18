@@ -42,7 +42,7 @@ public class ToJsonServiceController {
 
       // BSM POJO --> JSON converter
       launchConverter(odeProps.getKafkaTopicOdeBsmPojo(), OdeBsmDeserializer.class.getName(),
-            new ToJsonConverter<>(odeProps, false, odeProps.getKafkaTopicOdeBsmJson()));
+            new ToJsonConverter<>(odeProps, odeProperties.getVerboseJson(), odeProps.getKafkaTopicOdeBsmJson()));
    }
 
    private <V> void launchConverter(String fromTopic, String serializerFQN, ToJsonConverter<V> jsonConverter) {
